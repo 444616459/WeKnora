@@ -19,7 +19,8 @@ export default defineConfig({
     // 代理配置，用于开发环境
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://196.168.168.99:8080',
+        // target: 'http://localhost:8080', // 默认
         changeOrigin: true,
         secure: false,
       }

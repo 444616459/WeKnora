@@ -45,16 +45,18 @@
           </svg>
           <span>{{ $t('settings.webSearchConfig') }}</span>
         </div>
+        <!-- 不需要--ljr 
         <div class="menu-item" @click="handleQuickNav('mcp')">
           <t-icon name="tools" class="menu-icon" />
           <span>{{ $t('settings.mcpService') }}</span>
-        </div>
+        </div> -->
         <div class="menu-divider"></div>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
         </div>
         <div class="menu-divider"></div>
+        <!-- 不需要--ljr 
         <div class="menu-item" @click="openApiDoc">
           <t-icon name="book" class="menu-icon" />
           <span class="menu-text-with-icon">
@@ -90,8 +92,9 @@
               />
             </svg>
           </span>
-        </div>
+        </div> 
         <div class="menu-divider"></div>
+        -->
         <div class="menu-item danger" @click="handleLogout">
           <t-icon name="logout" class="menu-icon" />
           <span>{{ $t('auth.logout') }}</span>
