@@ -96,7 +96,7 @@ class StdMinerUParser(BaseParser):
                     "parse_method": "auto",  # Auto detect parsing method
                     "start_page_id": 0,  # Start from first page
                     "end_page_id": 99999,  # Parse all pages
-                    "backend": "pipeline",  # Use pipeline backend
+                    "backend": "vlm-vllm-async-engine",  # Use pipeline backend
                     "response_format_zip": False,  # Return JSON instead of ZIP
                     "return_middle_json": False,  # Don't return intermediate JSON
                     "return_model_output": False,  # Don't return model output
