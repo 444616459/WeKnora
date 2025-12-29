@@ -17,6 +17,7 @@ type FAQEntry struct {
 	KnowledgeID       string    `json:"knowledge_id"`
 	KnowledgeBaseID   string    `json:"knowledge_base_id"`
 	TagID             string    `json:"tag_id"`
+	TagName           string    `json:"tag_name"`
 	IsEnabled         bool      `json:"is_enabled"`
 	IsRecommended     bool      `json:"is_recommended"`
 	StandardQuestion  string    `json:"standard_question"`
@@ -68,6 +69,8 @@ type FAQEntryFieldsBatchRequest struct {
 	ByID map[string]FAQEntryFieldsUpdate `json:"by_id,omitempty"`
 	// ByTag updates all entries under a tag, key is tag ID (empty string for uncategorized)
 	ByTag map[string]FAQEntryFieldsUpdate `json:"by_tag,omitempty"`
+	// ExcludeIDs IDs to exclude from the ByTag update
+	ExcludeIDs []string `json:"exclude_ids,omitempty"`
 }
 
 // FAQEntryTagBatchRequest updates tags in bulk.
@@ -139,8 +142,10 @@ type faqSimpleResponse struct {
 }
 
 // ListFAQEntries returns paginated FAQ entries under a knowledge base.
+// searchField: specifies which field to search in ("standard_question", "similar_questions", "answers", "" for all)
+// sortOrder: "asc" for time ascending (updated_at ASC), default is time descending (updated_at DESC)
 func (c *Client) ListFAQEntries(ctx context.Context,
-	knowledgeBaseID string, page, pageSize int, tagID string, keyword string,
+	knowledgeBaseID string, page, pageSize int, tagID string, keyword string, searchField string, sortOrder string,
 ) (*FAQEntriesPage, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries", knowledgeBaseID)
 	query := url.Values{}
@@ -155,6 +160,12 @@ func (c *Client) ListFAQEntries(ctx context.Context,
 	}
 	if keyword != "" {
 		query.Add("keyword", keyword)
+	}
+	if searchField != "" {
+		query.Add("search_field", searchField)
+	}
+	if sortOrder != "" {
+		query.Add("sort_order", sortOrder)
 	}
 
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, query)
@@ -209,6 +220,23 @@ func (c *Client) CreateFAQEntry(ctx context.Context,
 	return response.Data, nil
 }
 
+// GetFAQEntry retrieves a single FAQ entry by ID.
+func (c *Client) GetFAQEntry(ctx context.Context,
+	knowledgeBaseID, entryID string,
+) (*FAQEntry, error) {
+	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/%s", knowledgeBaseID, entryID)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response FAQEntryResponse
+	if err := parseResponse(resp, &response); err != nil {
+		return nil, err
+	}
+	return response.Data, nil
+}
+
 // UpdateFAQEntry updates a single FAQ entry.
 func (c *Client) UpdateFAQEntry(ctx context.Context,
 	knowledgeBaseID, entryID string, payload *FAQEntryPayload,
@@ -229,10 +257,10 @@ func (c *Client) UpdateFAQEntry(ctx context.Context,
 //   - byID: update by entry ID, key is entry ID
 //   - byTag: update all entries under a tag, key is tag ID (empty string for uncategorized)
 func (c *Client) UpdateFAQEntryFieldsBatch(ctx context.Context,
-	knowledgeBaseID string, byID map[string]FAQEntryFieldsUpdate, byTag map[string]FAQEntryFieldsUpdate,
+	knowledgeBaseID string, byID map[string]FAQEntryFieldsUpdate, byTag map[string]FAQEntryFieldsUpdate, excludeIDs []string,
 ) error {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/fields", knowledgeBaseID)
-	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryFieldsBatchRequest{ByID: byID, ByTag: byTag}, nil)
+	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryFieldsBatchRequest{ByID: byID, ByTag: byTag, ExcludeIDs: excludeIDs}, nil)
 	if err != nil {
 		return err
 	}
