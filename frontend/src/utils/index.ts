@@ -1,4 +1,21 @@
 import { MessagePlugin } from "tdesign-vue-next";
+
+// 声明全局运行时配置类型
+declare global {
+  interface Window {
+    __RUNTIME_CONFIG__?: {
+      MAX_FILE_SIZE_MB?: number;
+    };
+  }
+}
+
+// 从运行时配置获取最大文件大小(MB)，支持 Docker 环境动态配置
+// 优先级：运行时配置 > 构建时环境变量 > 默认值 50MB
+const MAX_FILE_SIZE_MB = window.__RUNTIME_CONFIG__?.MAX_FILE_SIZE_MB 
+  || Number(import.meta.env.VITE_MAX_FILE_SIZE_MB) 
+  || 50;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 export function generateRandomString(length: number) {
   let result = "";
   const characters =
@@ -33,16 +50,16 @@ export function kbFileTypeVerification(file: any, silent = false) {
   }
   if (
     (type == "pdf" || type == "docx" || type == "doc") &&
-    file.size > 31457280
+    file.size > MAX_FILE_SIZE_BYTES
   ) {
     if (!silent) {
-      MessagePlugin.error("pdf/doc文件不能超过30M！");
+      MessagePlugin.error(`pdf/doc文件不能超过${MAX_FILE_SIZE_MB}M！`);
     }
     return true;
   }
-  if ((type == "txt" || type == "md") && file.size > 31457280) {
+  if ((type == "txt" || type == "md") && file.size > MAX_FILE_SIZE_BYTES) {
     if (!silent) {
-      MessagePlugin.error("txt/md文件不能超过30M！");
+      MessagePlugin.error(`txt/md文件不能超过${MAX_FILE_SIZE_MB}M！`);
     }
     return true;
   }

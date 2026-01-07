@@ -53,6 +53,11 @@ type ChatManage struct {
 	// Web search configuration (internal use)
 	TenantID         uint64 `json:"-"` // Tenant ID for retrieving web search config
 	WebSearchEnabled bool   `json:"-"` // Whether web search is enabled for this request
+
+	// FAQ Strategy Settings
+	FAQPriorityEnabled       bool    `json:"-"` // Whether FAQ priority strategy is enabled
+	FAQDirectAnswerThreshold float64 `json:"-"` // Threshold for direct FAQ answer (similarity > this value)
+	FAQScoreBoost            float64 `json:"-"` // Score multiplier for FAQ results
 }
 
 // Clone creates a deep copy of the ChatManage object
@@ -108,6 +113,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			Temperature:         c.SummaryConfig.Temperature,
 			Seed:                c.SummaryConfig.Seed,
 			MaxCompletionTokens: c.SummaryConfig.MaxCompletionTokens,
+			Thinking:            c.SummaryConfig.Thinking,
 		},
 		FallbackStrategy:     c.FallbackStrategy,
 		FallbackResponse:     c.FallbackResponse,
@@ -117,6 +123,10 @@ func (c *ChatManage) Clone() *ChatManage {
 		EnableRewrite:        c.EnableRewrite,
 		EnableQueryExpansion: c.EnableQueryExpansion,
 		TenantID:             c.TenantID,
+		// FAQ Strategy Settings
+		FAQPriorityEnabled:       c.FAQPriorityEnabled,
+		FAQDirectAnswerThreshold: c.FAQDirectAnswerThreshold,
+		FAQScoreBoost:            c.FAQScoreBoost,
 	}
 }
 
@@ -124,12 +134,14 @@ func (c *ChatManage) Clone() *ChatManage {
 type EventType string
 
 const (
+	LOAD_HISTORY           EventType = "load_history"           // Load conversation history without rewriting
 	REWRITE_QUERY          EventType = "rewrite_query"          // Query rewriting for better retrieval
 	CHUNK_SEARCH           EventType = "chunk_search"           // Search for relevant chunks
 	CHUNK_SEARCH_PARALLEL  EventType = "chunk_search_parallel"  // Parallel search: chunks + entities
 	ENTITY_SEARCH          EventType = "entity_search"          // Search for relevant entities
 	CHUNK_RERANK           EventType = "chunk_rerank"           // Rerank search results
 	CHUNK_MERGE            EventType = "chunk_merge"            // Merge similar chunks
+	DATA_ANALYSIS          EventType = "data_analysis"          // Data analysis for CSV/Excel files
 	INTO_CHAT_MESSAGE      EventType = "into_chat_message"      // Convert chunks into chat messages
 	CHAT_COMPLETION        EventType = "chat_completion"        // Generate chat completion
 	CHAT_COMPLETION_STREAM EventType = "chat_completion_stream" // Stream chat completion
@@ -142,7 +154,12 @@ var Pipline = map[string][]EventType{
 	"chat": { // Simple chat without retrieval
 		CHAT_COMPLETION,
 	},
-	"chat_stream": { // Streaming chat without retrieval
+	"chat_stream": { // Streaming chat without retrieval (no history)
+		CHAT_COMPLETION_STREAM,
+		STREAM_FILTER,
+	},
+	"chat_history_stream": { // Streaming chat with conversation history
+		LOAD_HISTORY,
 		CHAT_COMPLETION_STREAM,
 		STREAM_FILTER,
 	},
@@ -159,6 +176,7 @@ var Pipline = map[string][]EventType{
 		CHUNK_RERANK,
 		CHUNK_MERGE,
 		FILTER_TOP_K,
+		DATA_ANALYSIS,
 		INTO_CHAT_MESSAGE,
 		CHAT_COMPLETION_STREAM,
 		STREAM_FILTER,

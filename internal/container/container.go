@@ -5,6 +5,7 @@ package container
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -60,10 +62,14 @@ import (
 // Returns:
 //   - Configured container with all application dependencies registered
 func BuildContainer(container *dig.Container) *dig.Container {
+	ctx := context.Background()
+	logger.Debugf(ctx, "[Container] Starting container initialization...")
+
 	// Register resource cleaner for proper cleanup of resources
 	must(container.Provide(NewResourceCleaner, dig.As(new(interfaces.ResourceCleaner))))
 
 	// Core infrastructure configuration
+	logger.Debugf(ctx, "[Container] Registering core infrastructure...")
 	must(container.Provide(config.LoadConfig))
 	must(container.Provide(initTracer))
 	must(container.Provide(initDatabase))
@@ -76,15 +82,21 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(registerPoolCleanup))
 
 	// Initialize retrieval engine registry for search capabilities
+	logger.Debugf(ctx, "[Container] Registering retrieval engine registry...")
 	must(container.Provide(initRetrieveEngineRegistry))
 
 	// External service clients
+	logger.Debugf(ctx, "[Container] Registering external service clients...")
 	must(container.Provide(initDocReaderClient))
 	must(container.Provide(initOllamaService))
 	must(container.Provide(initNeo4jClient))
 	must(container.Provide(stream.NewStreamManager))
+	logger.Debugf(ctx, "[Container] Initializing DuckDB...")
+	must(container.Provide(NewDuckDB))
+	logger.Debugf(ctx, "[Container] DuckDB registered")
 
 	// Data repositories layer
+	logger.Debugf(ctx, "[Container] Registering repositories...")
 	must(container.Provide(repository.NewTenantRepository))
 	must(container.Provide(repository.NewKnowledgeBaseRepository))
 	must(container.Provide(repository.NewKnowledgeRepository))
@@ -97,11 +109,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
 	must(container.Provide(repository.NewMCPServiceRepository))
+	must(container.Provide(repository.NewCustomAgentRepository))
+	must(container.Provide(service.NewWebSearchStateService))
 
 	// MCP manager for managing MCP client connections
+	logger.Debugf(ctx, "[Container] Registering MCP manager...")
 	must(container.Provide(mcp.NewMCPManager))
 
 	// Business service layer
+	logger.Debugf(ctx, "[Container] Registering business services...")
 	must(container.Provide(service.NewTenantService))
 	must(container.Provide(service.NewKnowledgeBaseService))
 	must(container.Provide(service.NewKnowledgeService))
@@ -112,42 +128,56 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
-	must(container.Provide(service.NewChunkExtractService))
+
+	// Extract services - register individual extracters with names
+	must(container.Provide(service.NewChunkExtractService, dig.Name("chunkExtracter")))
+	must(container.Provide(service.NewDataTableSummaryService, dig.Name("dataTableSummary")))
+
 	must(container.Provide(service.NewMessageService))
 	must(container.Provide(service.NewMCPServiceService))
+	must(container.Provide(service.NewCustomAgentService))
 
 	// Web search service (needed by AgentService)
+	logger.Debugf(ctx, "[Container] Registering web search service...")
 	must(container.Provide(service.NewWebSearchService))
 
 	// Agent service layer (requires event bus, web search service)
 	// SessionService is passed as parameter to CreateAgentEngine method when creating AgentService
+	logger.Debugf(ctx, "[Container] Registering event bus and agent service...")
 	must(container.Provide(event.NewEventBus))
 	must(container.Provide(service.NewAgentService))
 
 	// Session service (depends on agent service)
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
+	logger.Debugf(ctx, "[Container] Registering session service...")
 	must(container.Provide(service.NewSessionService))
 
+	logger.Debugf(ctx, "[Container] Registering asynq client and server...")
 	must(container.Provide(router.NewAsyncqClient))
 	must(container.Provide(router.NewAsynqServer))
 
 	// Chat pipeline components for processing chat requests
+	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
 	must(container.Provide(chatpipline.NewEventManager))
 	must(container.Invoke(chatpipline.NewPluginTracing))
 	must(container.Invoke(chatpipline.NewPluginSearch))
 	must(container.Invoke(chatpipline.NewPluginRerank))
 	must(container.Invoke(chatpipline.NewPluginMerge))
+	must(container.Invoke(chatpipline.NewPluginDataAnalysis))
 	must(container.Invoke(chatpipline.NewPluginIntoChatMessage))
 	must(container.Invoke(chatpipline.NewPluginChatCompletion))
 	must(container.Invoke(chatpipline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipline.NewPluginStreamFilter))
 	must(container.Invoke(chatpipline.NewPluginFilterTopK))
 	must(container.Invoke(chatpipline.NewPluginRewrite))
+	must(container.Invoke(chatpipline.NewPluginLoadHistory))
 	must(container.Invoke(chatpipline.NewPluginExtractEntity))
 	must(container.Invoke(chatpipline.NewPluginSearchEntity))
 	must(container.Invoke(chatpipline.NewPluginSearchParallel))
+	logger.Debugf(ctx, "[Container] Chat pipeline plugins registered")
 
 	// HTTP handlers layer
+	logger.Debugf(ctx, "[Container] Registering HTTP handlers...")
 	must(container.Provide(handler.NewTenantHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))
@@ -163,11 +193,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewSystemHandler))
 	must(container.Provide(handler.NewMCPServiceHandler))
 	must(container.Provide(handler.NewWebSearchHandler))
+	must(container.Provide(handler.NewCustomAgentHandler))
+	logger.Debugf(ctx, "[Container] HTTP handlers registered")
 
 	// Router configuration
+	logger.Debugf(ctx, "[Container] Registering router and starting asynq server...")
 	must(container.Provide(router.NewRouter))
 	must(container.Invoke(router.RunAsynqServer))
 
+	logger.Infof(ctx, "[Container] Container initialization completed successfully")
 	return container
 }
 
@@ -595,4 +629,19 @@ func initNeo4jClient() (neo4j.Driver, error) {
 	}
 
 	return nil, fmt.Errorf("failed to connect to Neo4j after %d attempts: %w", maxRetries, err)
+}
+
+func NewDuckDB() (*sql.DB, error) {
+	sqlDB, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open duckdb: %w", err)
+	}
+
+	// Try to load spatial extension
+	loadSQL := "LOAD spatial;"
+	if _, err := sqlDB.ExecContext(context.Background(), loadSQL); err != nil {
+		logger.Warnf(context.Background(), "[DuckDB] Failed to load spatial extension: %v", err)
+	}
+
+	return sqlDB, nil
 }

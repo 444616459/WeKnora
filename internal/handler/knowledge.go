@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -115,6 +116,14 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	if err != nil {
 		logger.Error(ctx, "File upload failed", err)
 		c.Error(errors.NewBadRequestError("File upload failed").WithDetails(err.Error()))
+		return
+	}
+
+	// Validate file size (configurable via MAX_FILE_SIZE_MB)
+	maxSize := secutils.GetMaxFileSize()
+	if file.Size > maxSize {
+		logger.Error(ctx, "File size too large")
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("文件大小不能超过%dMB", secutils.GetMaxFileSizeMB())))
 		return
 	}
 
@@ -783,11 +792,12 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 // @Tags         Knowledge
 // @Accept       json
 // @Produce      json
-// @Param        keyword   query     string  false "Keyword to search"
-// @Param        offset    query     int     false "Offset for pagination"
-// @Param        limit     query     int     false "Limit for pagination (default 20)"
-// @Success      200       {object}  map[string]interface{}     "Search results"
-// @Failure      400       {object}  errors.AppError            "Invalid request"
+// @Param        keyword     query     string  false "Keyword to search"
+// @Param        offset      query     int     false "Offset for pagination"
+// @Param        limit       query     int     false "Limit for pagination (default 20)"
+// @Param        file_types  query     string  false "Comma-separated file extensions to filter (e.g., csv,xlsx)"
+// @Success      200         {object}  map[string]interface{}     "Search results"
+// @Failure      400         {object}  errors.AppError            "Invalid request"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge/search [get]
@@ -797,8 +807,19 @@ func (h *KnowledgeHandler) SearchKnowledge(c *gin.Context) {
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 
+	// Parse file_types parameter (comma-separated)
+	var fileTypes []string
+	if fileTypesStr := c.Query("file_types"); fileTypesStr != "" {
+		for _, ft := range strings.Split(fileTypesStr, ",") {
+			ft = strings.TrimSpace(ft)
+			if ft != "" {
+				fileTypes = append(fileTypes, ft)
+			}
+		}
+	}
+
 	// Retrieve knowledge entries (empty keyword returns recent files)
-	knowledges, hasMore, err := h.kgService.SearchKnowledge(ctx, keyword, offset, limit)
+	knowledges, hasMore, err := h.kgService.SearchKnowledge(ctx, keyword, offset, limit, fileTypes)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError("Failed to search knowledge").WithDetails(err.Error()))

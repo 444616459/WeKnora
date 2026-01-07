@@ -47,6 +47,7 @@ type RouterParams struct {
 	WebSearchHandler      *handler.WebSearchHandler
 	FAQHandler            *handler.FAQHandler
 	TagHandler            *handler.TagHandler
+	CustomAgentHandler    *handler.CustomAgentHandler
 }
 
 // NewRouter 创建新的路由
@@ -110,6 +111,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSystemRoutes(v1, params.SystemHandler)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
+		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
 	}
 
 	return r
@@ -313,6 +315,8 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
 	// 模型路由组
 	models := r.Group("/models")
 	{
+		// 获取模型厂商列表
+		models.GET("/providers", handler.ListModelProviders)
 		// 创建模型
 		models.POST("", handler.CreateModel)
 		// 获取模型列表
@@ -375,6 +379,7 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 	systemRoutes := r.Group("/system")
 	{
 		systemRoutes.GET("/info", handler.GetSystemInfo)
+		systemRoutes.GET("/minio/buckets", handler.ListMinioBuckets)
 	}
 }
 
@@ -408,5 +413,26 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 	{
 		// Get available providers
 		webSearch.GET("/providers", webSearchHandler.GetProviders)
+	}
+}
+
+// RegisterCustomAgentRoutes registers custom agent routes
+func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler) {
+	agents := r.Group("/agents")
+	{
+		// Get placeholder definitions (must be before /:id to avoid conflict)
+		agents.GET("/placeholders", agentHandler.GetPlaceholders)
+		// Create custom agent
+		agents.POST("", agentHandler.CreateAgent)
+		// List all agents (including built-in)
+		agents.GET("", agentHandler.ListAgents)
+		// Get agent by ID
+		agents.GET("/:id", agentHandler.GetAgent)
+		// Update agent
+		agents.PUT("/:id", agentHandler.UpdateAgent)
+		// Delete agent
+		agents.DELETE("/:id", agentHandler.DeleteAgent)
+		// Copy agent
+		agents.POST("/:id/copy", agentHandler.CopyAgent)
 	}
 }

@@ -59,8 +59,36 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 
 	// Special handling for references event
 	if evt.Type == types.ResponseTypeReferences {
-		if refs, ok := evt.Data["references"].(types.References); ok {
+		refsData := evt.Data["references"]
+		if refs, ok := refsData.(types.References); ok {
 			response.KnowledgeReferences = refs
+		} else if refs, ok := refsData.([]*types.SearchResult); ok {
+			response.KnowledgeReferences = types.References(refs)
+		} else if refs, ok := refsData.([]interface{}); ok {
+			// Handle case where data was serialized/deserialized (e.g., from Redis)
+			searchResults := make([]*types.SearchResult, 0, len(refs))
+			for _, ref := range refs {
+				if refMap, ok := ref.(map[string]interface{}); ok {
+					sr := &types.SearchResult{
+						ID:                getString(refMap, "id"),
+						Content:           getString(refMap, "content"),
+						KnowledgeID:       getString(refMap, "knowledge_id"),
+						ChunkIndex:        int(getFloat64(refMap, "chunk_index")),
+						KnowledgeTitle:    getString(refMap, "knowledge_title"),
+						StartAt:           int(getFloat64(refMap, "start_at")),
+						EndAt:             int(getFloat64(refMap, "end_at")),
+						Seq:               int(getFloat64(refMap, "seq")),
+						Score:             getFloat64(refMap, "score"),
+						ChunkType:         getString(refMap, "chunk_type"),
+						ParentChunkID:     getString(refMap, "parent_chunk_id"),
+						ImageInfo:         getString(refMap, "image_info"),
+						KnowledgeFilename: getString(refMap, "knowledge_filename"),
+						KnowledgeSource:   getString(refMap, "knowledge_source"),
+					}
+					searchResults = append(searchResults, sr)
+				}
+			}
+			response.KnowledgeReferences = types.References(searchResults)
 		}
 	}
 
@@ -203,20 +231,13 @@ func (h *Handler) createDefaultSummaryConfig(ctx context.Context) *types.Summary
 
 	// Override with tenant-level conversation config if available
 	if tenant != nil && tenant.ConversationConfig != nil {
-		useSystemPrompt := tenant.ConversationConfig.UseCustomSystemPrompt
-		if !useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
-			// Backward compatibility: treat legacy configs without flag as custom
-			useSystemPrompt = true
-		}
-		if useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
+		// Use custom prompt if provided
+		if tenant.ConversationConfig.Prompt != "" {
 			cfg.Prompt = tenant.ConversationConfig.Prompt
 		}
 
-		useContextTemplate := tenant.ConversationConfig.UseCustomContextTemplate
-		if !useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
-			useContextTemplate = true
-		}
-		if useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
+		// Use custom context template if provided
+		if tenant.ConversationConfig.ContextTemplate != "" {
 			cfg.ContextTemplate = tenant.ConversationConfig.ContextTemplate
 		}
 		if tenant.ConversationConfig.Temperature > 0 {
@@ -242,13 +263,13 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	var defaultMaxCompletionTokens int
 
 	if tenant != nil && tenant.ConversationConfig != nil {
-		useSystemPrompt := tenant.ConversationConfig.UseCustomSystemPrompt
-		if useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
+		// Use custom prompt if provided
+		if tenant.ConversationConfig.Prompt != "" {
 			defaultPrompt = tenant.ConversationConfig.Prompt
 		}
 
-		useContextTemplate := tenant.ConversationConfig.UseCustomContextTemplate
-		if useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
+		// Use custom context template if provided
+		if tenant.ConversationConfig.ContextTemplate != "" {
 			defaultContextTemplate = tenant.ConversationConfig.ContextTemplate
 		}
 		defaultTemperature = tenant.ConversationConfig.Temperature
